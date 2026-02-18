@@ -50,13 +50,13 @@ class BotState:
                 account_id = account_payload.get("aid") or self._new_account_id()
                 accounts[email] = {
                     "pass": str(account_payload.get("pass", "")),
-                    "last": int(account_payload.get("last", 0) or 0),
+                    "last": self._to_int(account_payload.get("last"), default=0),
                     "aid": str(account_id),
                 }
 
             loaded[user_id] = {
                 "active": bool(user_payload.get("active", True)),
-                "chat_id": int(user_payload.get("chat_id", user_id)),
+                "chat_id": self._to_int(user_payload.get("chat_id"), default=user_id),
                 "accounts": accounts,
             }
 
@@ -114,7 +114,14 @@ class BotState:
         with self.lock:
             user = self.user_sessions.get(user_id, {})
             accounts = user.get("accounts", {})
-            return [(acc.get("aid", ""), email) for email, acc in accounts.items()]
+            rows: list[tuple[str, str]] = []
+            for email, account in accounts.items():
+                account_id = str(account.get("aid", ""))
+                if not account_id:
+                    account_id = self._new_account_id()
+                    account["aid"] = account_id
+                rows.append((account_id, email))
+            return rows
 
     def get_credentials_by_account_id(self, user_id: int, account_id: str) -> Optional[tuple[str, str, int]]:
         with self.lock:
@@ -123,7 +130,7 @@ class BotState:
                 return None
             for email, account in user.get("accounts", {}).items():
                 if account.get("aid") == account_id:
-                    return email, str(account.get("pass", "")), int(account.get("last", 0))
+                    return email, str(account.get("pass", "")), self._to_int(account.get("last"), default=0)
         return None
 
     def update_last_check(self, user_id: int, email: str, last_ms: int) -> None:
@@ -182,7 +189,7 @@ class BotState:
             result: list[tuple[int, int]] = []
             for user_id, payload in self.user_sessions.items():
                 if payload.get("active") and payload.get("accounts"):
-                    result.append((user_id, int(payload.get("chat_id", user_id))))
+                    result.append((user_id, self._to_int(payload.get("chat_id"), default=user_id)))
             return result
 
     def poll_snapshot(self, user_id: int) -> tuple[bool, int, list[tuple[str, str, int]]]:
@@ -191,9 +198,9 @@ class BotState:
             if not user:
                 return False, user_id, []
             active = bool(user.get("active"))
-            chat_id = int(user.get("chat_id", user_id))
+            chat_id = self._to_int(user.get("chat_id"), default=user_id)
             accounts = [
-                (email, str(account.get("pass", "")), int(account.get("last", 0)))
+                (email, str(account.get("pass", "")), self._to_int(account.get("last"), default=0))
                 for email, account in user.get("accounts", {}).items()
             ]
             return active, chat_id, accounts
@@ -266,3 +273,10 @@ class BotState:
     @staticmethod
     def _new_snapshot_token() -> str:
         return secrets.token_hex(4)
+
+    @staticmethod
+    def _to_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default

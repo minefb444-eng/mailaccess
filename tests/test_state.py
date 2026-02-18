@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from bot_app.state import BotState
 
@@ -48,3 +49,45 @@ def test_store_snapshot_returns_accessible_mail(tmp_path: Path) -> None:
     mail = state.get_snapshot_mail(50, token, 0)
     assert mail is not None
     assert mail["id"] == "x"
+
+
+def test_load_sessions_tolerates_malformed_numeric_values(tmp_path: Path) -> None:
+    session_path = tmp_path / "sessions.json"
+    session_path.write_text(
+        json.dumps(
+            {
+                "7": {
+                    "active": True,
+                    "chat_id": "bad-chat-id",
+                    "accounts": {
+                        "broken@example.com": {
+                            "pass": "pw",
+                            "last": "NaN",
+                            "aid": "",
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = BotState(str(session_path))
+    state.load_sessions()
+
+    accounts = state.get_accounts(7)
+    assert len(accounts) == 1
+    account_id, email = accounts[0]
+    assert account_id
+    assert email == "broken@example.com"
+
+    credentials = state.get_credentials_by_account_id(7, account_id)
+    assert credentials is not None
+    loaded_email, loaded_password, loaded_last = credentials
+    assert loaded_email == "broken@example.com"
+    assert loaded_password == "pw"
+    assert loaded_last == 0
+
+    active, chat_id, snapshot_accounts = state.poll_snapshot(7)
+    assert active is True
+    assert chat_id == 7
+    assert len(snapshot_accounts) == 1

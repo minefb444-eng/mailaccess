@@ -509,11 +509,19 @@ class BotHandlers:
         self.bot.send_message(chat_id, heading, reply_markup=markup)
 
     def _search_callback(self, call: types.CallbackQuery) -> None:
-        self.bot.answer_callback_query(call.id)
         parts = call.data.split("|")
         if len(parts) != 2:
+            self.bot.answer_callback_query(call.id)
             return
         account_id = parts[1]
+        current_query = self.state.get_search(call.from_user.id, account_id)
+        if current_query:
+            self.state.set_search(call.from_user.id, account_id, "")
+            self.bot.answer_callback_query(call.id, "Search cleared")
+            self._show_inbox(call.message.chat.id, call.from_user.id, account_id, 1)
+            return
+
+        self.bot.answer_callback_query(call.id)
         msg = self.bot.send_message(
             call.message.chat.id,
             "🔍 Send a search term.\nUse <code>clear</code> to remove active search.",
