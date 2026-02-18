@@ -77,6 +77,11 @@ def shorten(value: str, limit: int) -> str:
     return text[: limit - 1] + "…"
 
 
+def safe_shorten(value: Any, limit: int) -> str:
+    """Shorten first, then HTML-escape to avoid broken entities."""
+    return sanitize(shorten(str(value if value is not None else ""), limit))
+
+
 def build_profile_text(accounts: Iterable[dict[str, Any]]) -> str:
     rows = list(accounts)
     if not rows:

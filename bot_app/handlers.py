@@ -14,6 +14,7 @@ from .formatting import (
     format_time,
     is_valid_email,
     parse_email_preview,
+    safe_shorten,
     sanitize,
     shorten,
 )
@@ -553,16 +554,16 @@ class BotHandlers:
             return
 
         web_link = f"{self.config.worker_url}/view_email?id={mail.get('id', '')}"
-        subject = sanitize(mail.get("subject", "(No Subject)"))
-        sender = sanitize(mail.get("sender", "Unknown"))
+        subject = safe_shorten(mail.get("subject", "(No Subject)"), 80)
+        sender = safe_shorten(mail.get("sender", "Unknown"), 80)
         received = sanitize(format_time(mail.get("received_at")))
         body_preview = parse_email_preview(mail.get("body", ""))
         otp = extract_otp(body_preview) or extract_otp(mail.get("subject", ""))
 
         text = (
             f"📨 <b>Email Details</b>\n"
-            f"👤 From: {shorten(sender, 80)}\n"
-            f"📌 Subject: {shorten(subject, 80)}\n"
+            f"👤 From: {sender}\n"
+            f"📌 Subject: {subject}\n"
             f"📅 Time: {received or 'Unknown'}\n"
             f"➖➖➖➖➖➖➖\n"
             f"Tap below to open the full email."

@@ -1,4 +1,4 @@
-from bot_app.formatting import extract_otp, format_time, parse_email_preview, sanitize, shorten
+from bot_app.formatting import extract_otp, format_time, parse_email_preview, safe_shorten, sanitize, shorten
 
 
 def test_extract_otp_matches_6_digits() -> None:
@@ -24,3 +24,7 @@ def test_sanitize_escapes_html() -> None:
 
 def test_shorten_truncates() -> None:
     assert shorten("abcdef", 4) == "abc…"
+
+
+def test_safe_shorten_avoids_broken_html_entities() -> None:
+    assert safe_shorten("<tag>", 2) == "&lt;…"

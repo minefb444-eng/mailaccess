@@ -9,7 +9,7 @@ from telebot import TeleBot
 
 from .api_client import WorkerApiClient
 from .config import BotConfig
-from .formatting import extract_otp, parse_email_preview, sanitize, shorten
+from .formatting import extract_otp, parse_email_preview, safe_shorten, sanitize
 from .state import BotState
 
 LOGGER = logging.getLogger(__name__)
@@ -104,16 +104,16 @@ class PollingManager:
 
     def _notify_new_mail(self, chat_id: int, account_email: str, mail: dict[str, Any]) -> None:
         worker_link = f"{self.config.worker_url}/view_email?id={mail.get('id', '')}"
-        subject = sanitize(mail.get("subject", "(No Subject)"))
-        sender = sanitize(mail.get("sender", "Unknown"))
+        subject = safe_shorten(mail.get("subject", "(No Subject)"), 80)
+        sender = safe_shorten(mail.get("sender", "Unknown"), 60)
         preview = parse_email_preview(mail.get("body", ""))
         otp = extract_otp(preview) or extract_otp(mail.get("subject", ""))
 
         text = (
             f"🔔 <b>New Email</b>\n"
             f"📧 Account: <code>{sanitize(account_email)}</code>\n"
-            f"👤 From: {shorten(sender, 60)}\n"
-            f"📌 Subject: {shorten(subject, 80)}"
+            f"👤 From: {sender}\n"
+            f"📌 Subject: {subject}"
         )
         self._safe_send_with_link(chat_id, text, worker_link)
         if otp:
