@@ -187,10 +187,10 @@ class BotHandlers:
 
     # ---------- admin ----------
     def _handle_admin_callback(self, call: types.CallbackQuery) -> None:
-        self.bot.answer_callback_query(call.id)
         if not self._is_admin(call.from_user.id):
             self.bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
             return
+        self.bot.answer_callback_query(call.id)
 
         action = call.data.split("|", 1)[1]
         if action == "stats":
@@ -218,7 +218,7 @@ class BotHandlers:
     def _admin_stats(self, call: types.CallbackQuery) -> None:
         status_code, payload = self.api_client.post_json("/admin/stats")
         if status_code != 200 or not isinstance(payload, list):
-            self.bot.answer_callback_query(call.id, "❌ Could not fetch stats.", show_alert=True)
+            self.bot.send_message(call.message.chat.id, "❌ Could not fetch admin stats right now.")
             return
 
         users = payload
@@ -339,7 +339,7 @@ class BotHandlers:
     def _admin_delete_list(self, call: types.CallbackQuery) -> None:
         status_code, payload = self.api_client.post_json("/admin/list")
         if status_code != 200 or not isinstance(payload, list) or not payload:
-            self.bot.answer_callback_query(call.id, "No accounts found.", show_alert=True)
+            self.bot.send_message(call.message.chat.id, "⚠️ No accounts found.")
             return
         markup = types.InlineKeyboardMarkup()
         for account in payload:
@@ -352,7 +352,6 @@ class BotHandlers:
         self.bot.edit_message_text("Select an account to delete:", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
     def _handle_admin_delete_confirm(self, call: types.CallbackQuery) -> None:
-        self.bot.answer_callback_query(call.id)
         if not self._is_admin(call.from_user.id):
             self.bot.answer_callback_query(call.id, "Unauthorized", show_alert=True)
             return
@@ -361,6 +360,7 @@ class BotHandlers:
         if not email_address:
             self.bot.answer_callback_query(call.id, "This action has expired.", show_alert=True)
             return
+        self.bot.answer_callback_query(call.id)
         status_code, _payload = self.api_client.post_json("/admin/delete", {"email": email_address})
         if status_code == 200:
             self.bot.edit_message_text(
@@ -538,9 +538,9 @@ class BotHandlers:
         self._show_inbox(message.chat.id, message.from_user.id, account_id, 1)
 
     def _read_callback(self, call: types.CallbackQuery) -> None:
-        self.bot.answer_callback_query(call.id)
         parts = call.data.split("|")
         if len(parts) != 3:
+            self.bot.answer_callback_query(call.id)
             return
         _, token, index_raw = parts
         try:
@@ -552,6 +552,7 @@ class BotHandlers:
         if not mail:
             self.bot.answer_callback_query(call.id, "This list expired. Please refresh.", show_alert=True)
             return
+        self.bot.answer_callback_query(call.id)
 
         web_link = f"{self.config.worker_url}/view_email?id={mail.get('id', '')}"
         subject = safe_shorten(mail.get("subject", "(No Subject)"), 80)
@@ -588,15 +589,16 @@ class BotHandlers:
         )
 
     def _logout_callback(self, call: types.CallbackQuery) -> None:
-        self.bot.answer_callback_query(call.id)
         parts = call.data.split("|")
         if len(parts) != 2:
+            self.bot.answer_callback_query(call.id)
             return
         account_id = parts[1]
         removed_email = self.state.remove_account(call.from_user.id, account_id)
         if not removed_email:
             self.bot.answer_callback_query(call.id, "Account already removed.", show_alert=True)
             return
+        self.bot.answer_callback_query(call.id)
         self.state.save_sessions()
         self.bot.edit_message_text(
             f"✅ Disconnected <code>{sanitize(removed_email)}</code>",
