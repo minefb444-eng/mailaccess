@@ -87,6 +87,11 @@ Then open `http://<server-ip>:8080`.
   - `scripts/windows/run_bot.bat`
   - `scripts/windows/run_web.bat`
 - Copy `.env.example` values into Windows environment variables before starting services.
+- Detailed guide: `docs/WINDOWS_DEPLOYMENT.md`
+
+## Manual validation checklist
+
+- See `docs/MANUAL_TEST_MATRIX.md` for a full end-to-end validation matrix.
 
 ## Test
 
