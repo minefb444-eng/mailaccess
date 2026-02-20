@@ -36,6 +36,11 @@ class WebConfig:
     web_port: int = 8080
     web_session_cookie_name: str = "mailaccess_web_session"
     web_session_https_only: bool = False
+    web_session_max_age_seconds: int = 43200
+    web_login_rate_limit: int = 8
+    web_login_rate_window_seconds: int = 60
+    web_write_rate_limit: int = 45
+    web_write_rate_window_seconds: int = 60
 
 
 def _int_env(name: str, default: int) -> int:
@@ -106,4 +111,9 @@ def load_web_config() -> WebConfig:
         web_session_cookie_name=os.getenv("WEB_SESSION_COOKIE_NAME", "mailaccess_web_session").strip()
         or "mailaccess_web_session",
         web_session_https_only=bool(_int_env("WEB_SESSION_HTTPS_ONLY", 0)),
+        web_session_max_age_seconds=max(300, _int_env("WEB_SESSION_MAX_AGE_SECONDS", 43200)),
+        web_login_rate_limit=max(1, _int_env("WEB_LOGIN_RATE_LIMIT", 8)),
+        web_login_rate_window_seconds=max(10, _int_env("WEB_LOGIN_RATE_WINDOW_SECONDS", 60)),
+        web_write_rate_limit=max(1, _int_env("WEB_WRITE_RATE_LIMIT", 45)),
+        web_write_rate_window_seconds=max(10, _int_env("WEB_WRITE_RATE_WINDOW_SECONDS", 60)),
     )

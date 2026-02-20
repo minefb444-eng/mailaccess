@@ -16,6 +16,7 @@ Both channels use the same backend data source (`SESSION_FILE` + worker API).
 - ✅ HTML-safe message rendering for external content
 - ✅ Admin callback hardening (checks enforced in handler layer)
 - ✅ FastAPI web portal with CSRF-protected forms and cookie sessions
+- ✅ Login/write endpoint rate limiting for web abuse protection
 
 ## Requirements
 
@@ -56,6 +57,11 @@ Optional:
 - `WEB_PORT` (default: `8080`)
 - `WEB_SESSION_COOKIE_NAME` (default: `mailaccess_web_session`)
 - `WEB_SESSION_HTTPS_ONLY` (default: `0`; set `1` behind HTTPS)
+- `WEB_SESSION_MAX_AGE_SECONDS` (default: `43200`)
+- `WEB_LOGIN_RATE_LIMIT` (default: `8`)
+- `WEB_LOGIN_RATE_WINDOW_SECONDS` (default: `60`)
+- `WEB_WRITE_RATE_LIMIT` (default: `45`)
+- `WEB_WRITE_RATE_WINDOW_SECONDS` (default: `60`)
 
 ## Run Telegram bot
 
@@ -77,6 +83,10 @@ Then open `http://<server-ip>:8080`.
 - Use same `SESSION_FILE` and `BOT_SECRET` in both so data stays shared.
 - Put IIS/Nginx/Caddy in front of web app for HTTPS.
 - Set `WEB_SESSION_HTTPS_ONLY=1` when HTTPS is enabled.
+- Use provided startup scripts:
+  - `scripts/windows/run_bot.bat`
+  - `scripts/windows/run_web.bat`
+- Copy `.env.example` values into Windows environment variables before starting services.
 
 ## Test
 

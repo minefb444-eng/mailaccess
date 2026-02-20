@@ -73,23 +73,29 @@ def _build_config() -> WebConfig:
         web_port=18080,
         web_session_cookie_name="test_session",
         web_session_https_only=False,
+        web_login_rate_limit=2,
+        web_login_rate_window_seconds=60,
+        web_write_rate_limit=2,
+        web_write_rate_window_seconds=60,
     )
+
+
+def _login(client: TestClient, email: str = "demo@example.com", password: str = "pw") -> None:
+    login_page = client.get("/login")
+    csrf = _extract_csrf(login_page.text)
+    response = client.post(
+        "/login",
+        data={"email": email, "password": password, "csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
 
 
 def test_web_login_and_accounts_render() -> None:
     app = create_app(config=_build_config(), service_override=FakeService())
     client = TestClient(app)
 
-    login_page = client.get("/login")
-    csrf = _extract_csrf(login_page.text)
-    response = client.post(
-        "/login",
-        data={"email": "demo@example.com", "password": "pw", "csrf_token": csrf},
-        follow_redirects=False,
-    )
-
-    assert response.status_code == 302
-    assert response.headers["location"] == "/accounts"
+    _login(client)
 
     accounts = client.get("/accounts")
     assert accounts.status_code == 200
@@ -108,3 +114,41 @@ def test_login_rejects_invalid_csrf() -> None:
 
     assert response.status_code == 400
     assert "Invalid session token" in response.text
+
+
+def test_login_rate_limiter_blocks_excess_attempts() -> None:
+    app = create_app(config=_build_config(), service_override=FakeService())
+    client = TestClient(app)
+
+    login_page = client.get("/login")
+    csrf = _extract_csrf(login_page.text)
+    first = client.post(
+        "/login",
+        data={"email": "a@example.com", "password": "pw", "csrf_token": csrf},
+        follow_redirects=False,
+    )
+    second = client.post(
+        "/login",
+        data={"email": "b@example.com", "password": "pw", "csrf_token": csrf},
+        follow_redirects=False,
+    )
+    third = client.post(
+        "/login",
+        data={"email": "c@example.com", "password": "pw", "csrf_token": csrf},
+        follow_redirects=False,
+    )
+
+    assert first.status_code == 302
+    assert second.status_code == 302
+    assert third.status_code == 429
+    assert "Too many login attempts" in third.text
+
+
+def test_write_routes_reject_bad_csrf() -> None:
+    app = create_app(config=_build_config(), service_override=FakeService())
+    client = TestClient(app)
+    _login(client)
+
+    bad = client.post("/accounts/aid1/search", data={"query": "otp", "csrf_token": "bad"})
+    assert bad.status_code == 400
+    assert "Invalid CSRF token" in bad.text

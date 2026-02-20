@@ -28,7 +28,7 @@ class MailAccessBotApp:
             state=self.state,
             api_client=self.api_client,
             worker_url=config.worker_url,
-            sync_state_each_call=False,
+            sync_state_each_call=True,
         )
         self.polling_manager = PollingManager(
             bot=self.bot,

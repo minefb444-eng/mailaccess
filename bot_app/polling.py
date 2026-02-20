@@ -49,6 +49,7 @@ class PollingManager:
     def _poll_loop(self, user_id: int) -> None:
         LOGGER.info("Started polling loop for user_id=%s", user_id)
         while True:
+            self.state.load_sessions()
             active, chat_id, accounts = self.state.poll_snapshot(user_id)
             if not active or not accounts:
                 LOGGER.info(

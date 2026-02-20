@@ -13,6 +13,7 @@ from bot_app.config import WebConfig, load_web_config
 from bot_app.formatting import is_valid_email
 from bot_app.services import MailAccessService
 from bot_app.state import BotState
+from .security import InMemoryRateLimiter, RateLimitRule
 
 
 def create_app(config: WebConfig | None = None, service_override: MailAccessService | None = None) -> FastAPI:
@@ -24,6 +25,7 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
         session_cookie=app_config.web_session_cookie_name,
         same_site="lax",
         https_only=app_config.web_session_https_only,
+        max_age=app_config.web_session_max_age_seconds,
     )
 
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -46,10 +48,11 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
     app.state.config = app_config
     app.state.templates = templates
     app.state.service = service
+    app.state.rate_limiter = InMemoryRateLimiter()
 
     @app.get("/", response_class=HTMLResponse)
     async def root(request: Request) -> RedirectResponse:
-        if request.session.get("uid"):
+        if _require_user_id(request) is not None:
             return RedirectResponse("/accounts", status_code=302)
         return RedirectResponse("/login", status_code=302)
 
@@ -68,6 +71,20 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
         password: str = Form(default=""),
         csrf_token: str = Form(default=""),
     ):
+        if not _allow_request(
+            request,
+            "login",
+            RateLimitRule(
+                limit=app_config.web_login_rate_limit,
+                window_seconds=app_config.web_login_rate_window_seconds,
+            ),
+        ):
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"error": "Too many login attempts. Please wait a minute.", "csrf_token": _ensure_csrf_token(request)},
+                status_code=429,
+            )
         if not _validate_csrf(request, csrf_token):
             return templates.TemplateResponse(
                 request,
@@ -111,10 +128,10 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
 
     @app.get("/accounts", response_class=HTMLResponse)
     async def accounts(request: Request):
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        accounts_rows = service.list_accounts(int(user_id))
+        accounts_rows = service.list_accounts(user_id)
         return templates.TemplateResponse(
             request,
             "accounts.html",
@@ -127,21 +144,32 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
         account_id: str,
         csrf_token: str = Form(default=""),
     ) -> RedirectResponse:
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        if _validate_csrf(request, csrf_token):
-            service.disconnect_account(int(user_id), account_id)
+        if not _allow_request(
+            request,
+            "write",
+            RateLimitRule(
+                limit=app_config.web_write_rate_limit,
+                window_seconds=app_config.web_write_rate_window_seconds,
+            ),
+        ):
+            return HTMLResponse("Too many requests", status_code=429)
+        if not _validate_csrf(request, csrf_token):
+            return HTMLResponse("Invalid CSRF token", status_code=400)
+        service.disconnect_account(user_id, account_id)
         return RedirectResponse("/accounts", status_code=302)
 
     @app.post("/logout-all")
     async def logout_all(request: Request, csrf_token: str = Form(default="")) -> RedirectResponse:
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        if _validate_csrf(request, csrf_token):
-            service.logout_all(int(user_id))
-            request.session.clear()
+        if not _validate_csrf(request, csrf_token):
+            return HTMLResponse("Invalid CSRF token", status_code=400)
+        service.logout_all(user_id)
+        request.session.clear()
         return RedirectResponse("/login", status_code=302)
 
     @app.get("/accounts/{account_id}/inbox", response_class=HTMLResponse)
@@ -150,10 +178,10 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
         account_id: str,
         page: int = 1,
     ):
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        inbox_result = service.fetch_inbox(int(user_id), account_id, max(1, page))
+        inbox_result = service.fetch_inbox(user_id, account_id, max(1, page))
         if not inbox_result.ok:
             return templates.TemplateResponse(
                 request,
@@ -197,19 +225,29 @@ def create_app(config: WebConfig | None = None, service_override: MailAccessServ
         query: str = Form(default=""),
         csrf_token: str = Form(default=""),
     ) -> RedirectResponse:
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        if _validate_csrf(request, csrf_token):
-            service.set_search(int(user_id), account_id, query)
+        if not _allow_request(
+            request,
+            "write",
+            RateLimitRule(
+                limit=app_config.web_write_rate_limit,
+                window_seconds=app_config.web_write_rate_window_seconds,
+            ),
+        ):
+            return HTMLResponse("Too many requests", status_code=429)
+        if not _validate_csrf(request, csrf_token):
+            return HTMLResponse("Invalid CSRF token", status_code=400)
+        service.set_search(user_id, account_id, query)
         return RedirectResponse(f"/accounts/{account_id}/inbox?page=1", status_code=302)
 
     @app.get("/mail/{token}/{index}", response_class=HTMLResponse)
     async def mail_detail(request: Request, token: str, index: int):
-        user_id = request.session.get("uid")
-        if not user_id:
+        user_id = _require_user_id(request)
+        if user_id is None:
             return RedirectResponse("/login", status_code=302)
-        detail = service.read_mail_detail(int(user_id), token, index)
+        detail = service.read_mail_detail(user_id, token, index)
         if not detail:
             return templates.TemplateResponse(
                 request,
@@ -229,6 +267,17 @@ def _ensure_web_user_id(request: Request) -> int:
     uid = -max(1, secrets.randbelow(2_000_000_000))
     request.session["uid"] = uid
     return uid
+
+
+def _require_user_id(request: Request) -> int | None:
+    raw_uid = request.session.get("uid")
+    if raw_uid is None:
+        return None
+    try:
+        return int(raw_uid)
+    except (TypeError, ValueError):
+        request.session.clear()
+        return None
 
 
 def _ensure_csrf_token(request: Request) -> str:
@@ -257,3 +306,10 @@ def _web_error_text(status: str) -> str:
 
 def _strip_html(value: str) -> str:
     return value.replace("<code>", "").replace("</code>", "")
+
+
+def _allow_request(request: Request, scope: str, rule: RateLimitRule) -> bool:
+    limiter: InMemoryRateLimiter = request.app.state.rate_limiter
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"{scope}:{client_ip}"
+    return limiter.allow(key, rule)
