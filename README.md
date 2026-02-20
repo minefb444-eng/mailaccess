@@ -1,21 +1,28 @@
-# Mail Access Telegram Bot
+# Mail Access Bot + Web Portal
 
-A cleaner and safer Telegram bot for managing connected mail accounts, reading inbox previews, and extracting OTP codes.
+This project now supports both:
+
+- Telegram bot access (existing flow)
+- Web portal access (for customers who do not use Telegram)
+
+Both channels use the same backend data source (`SESSION_FILE` + worker API).
 
 ## Highlights
 
-- ✅ Refactored into modules (`config`, `state`, `handlers`, `polling`, etc.)
+- ✅ Refactored into modules (`config`, `state`, `handlers`, `polling`, `services`, etc.)
 - ✅ Safer config loading (no hardcoded production token/secret defaults)
 - ✅ Robust callback routing using compact account/snapshot IDs
 - ✅ Thread-safe session state with atomic JSON persistence
 - ✅ HTML-safe message rendering for external content
 - ✅ Admin callback hardening (checks enforced in handler layer)
+- ✅ FastAPI web portal with CSRF-protected forms and cookie sessions
 
 ## Requirements
 
 - Python 3.10+
-- Telegram bot token
+- Telegram bot token (for Telegram process only)
 - Worker API URL and bot secret
+- Web session secret (for web process only)
 
 Install dependencies:
 
@@ -27,8 +34,15 @@ python -m pip install -r requirements.txt
 
 Required:
 
-- `BOT_TOKEN`
 - `BOT_SECRET`
+
+Required for Telegram process:
+
+- `BOT_TOKEN`
+
+Required for Web process:
+
+- `WEB_SESSION_SECRET`
 
 Optional:
 
@@ -38,12 +52,31 @@ Optional:
 - `SESSION_FILE` (default: `sessions.json`)
 - `POLL_INTERVAL_SECONDS` (default: `5`)
 - `REQUEST_TIMEOUT_SECONDS` (default: `10`)
+- `WEB_HOST` (default: `0.0.0.0`)
+- `WEB_PORT` (default: `8080`)
+- `WEB_SESSION_COOKIE_NAME` (default: `mailaccess_web_session`)
+- `WEB_SESSION_HTTPS_ONLY` (default: `0`; set `1` behind HTTPS)
 
-## Run
+## Run Telegram bot
 
 ```bash
 python main
 ```
+
+## Run web portal
+
+```bash
+python web_main.py
+```
+
+Then open `http://<server-ip>:8080`.
+
+## Windows RDP deployment notes
+
+- Run Telegram and web as separate processes/services.
+- Use same `SESSION_FILE` and `BOT_SECRET` in both so data stays shared.
+- Put IIS/Nginx/Caddy in front of web app for HTTPS.
+- Set `WEB_SESSION_HTTPS_ONLY=1` when HTTPS is enabled.
 
 ## Test
 

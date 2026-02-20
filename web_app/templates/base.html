@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "Mail Access Portal" }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 880px; margin: 24px auto; padding: 0 12px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .error { color: #b00020; font-weight: 600; }
+    .muted { color: #666; }
+    input, button { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+    button { cursor: pointer; }
+    a { color: #135dd8; text-decoration: none; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; border-bottom: 1px solid #eee; padding: 8px 4px; }
+  </style>
+</head>
+<body>
+  <h2>Mail Access Web Portal</h2>
+  {% block body %}{% endblock %}
+</body>
+</html>

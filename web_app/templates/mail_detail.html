@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="card">
+  <p><a href="javascript:history.back()">← Back</a></p>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% elif detail %}
+    <p><b>From:</b> {{ detail.from_sender | safe }}</p>
+    <p><b>Subject:</b> {{ detail.subject | safe }}</p>
+    <p><b>Received:</b> {{ detail.received }}</p>
+    {% if detail.otp %}
+      <p><b>OTP:</b> <code>{{ detail.otp }}</code></p>
+    {% endif %}
+    <p><a href="{{ detail.view_link }}" target="_blank">View Full Email</a></p>
+  {% endif %}
+</div>
+{% endblock %}

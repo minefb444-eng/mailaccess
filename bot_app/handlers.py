@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from telebot import TeleBot, types
@@ -10,11 +9,7 @@ from .api_client import WorkerApiClient
 from .config import BotConfig
 from .formatting import (
     build_profile_text,
-    extract_otp,
-    format_time,
     is_valid_email,
-    parse_email_preview,
-    safe_shorten,
     sanitize,
     shorten,
 )
@@ -26,6 +21,7 @@ from .keyboards import (
     build_main_menu,
 )
 from .polling import PollingManager
+from .services import MailAccessService
 from .state import BotState
 
 LOGGER = logging.getLogger(__name__)
@@ -39,12 +35,14 @@ class BotHandlers:
         state: BotState,
         api_client: WorkerApiClient,
         polling_manager: PollingManager,
+        service: MailAccessService,
     ) -> None:
         self.bot = bot
         self.config = config
         self.state = state
         self.api_client = api_client
         self.polling_manager = polling_manager
+        self.service = service
         self._register()
 
     def _register(self) -> None:
@@ -120,8 +118,7 @@ class BotHandlers:
 
         @bot.message_handler(func=lambda m: m.text == "❌ Logout All")
         def logout_all(message: types.Message) -> None:
-            self.state.logout_all(message.from_user.id)
-            self.state.save_sessions()
+            self.service.logout_all(message.from_user.id)
             bot.send_message(message.chat.id, "✅ All accounts disconnected.")
 
         @bot.callback_query_handler(func=lambda c: c.data == "close")
@@ -418,38 +415,26 @@ class BotHandlers:
             return
         user_id = message.from_user.id
         username = message.from_user.username or message.from_user.first_name or "Unknown"
-        status_code, payload = self.api_client.post_json(
-            "/check_auth",
-            {"email": email_address, "password": password, "user_id": user_id, "username": username},
-        )
-        if status_code is None:
-            self.bot.send_message(message.chat.id, "❌ Connection error. Please try again.")
-            return
-        if status_code != 200 or not isinstance(payload, dict):
-            self.bot.send_message(message.chat.id, "❌ Invalid response from auth server.")
-            return
-        if not payload.get("valid"):
-            self.bot.send_message(message.chat.id, "❌ Access denied. Check credentials.")
-            return
-
-        account_id, _new_user = self.state.ensure_account(
+        result = self.service.connect_account(
             user_id=user_id,
             chat_id=message.chat.id,
+            username=username,
             email=email_address,
             password=password,
-            last_ms=int(time.time() * 1000),
         )
-        self.state.save_sessions()
+        if not result.ok:
+            self.bot.send_message(message.chat.id, result.message)
+            return
         self.polling_manager.ensure_user_thread(user_id)
         self._log_activity(
             f"👤 <b>New Login</b>\nUser: {sanitize(username)} ({user_id})\nEmail: {sanitize(email_address)}"
         )
-        self.bot.send_message(message.chat.id, f"✅ Connected <code>{sanitize(email_address)}</code> successfully.")
-        self._show_inbox(message.chat.id, user_id, account_id, 1)
+        self.bot.send_message(message.chat.id, result.message)
+        self._show_inbox(message.chat.id, user_id, result.account_id or "", 1)
 
     # ---------- inbox ----------
     def _connected_mails(self, message: types.Message) -> None:
-        accounts = self.state.get_accounts(message.from_user.id)
+        accounts = self.service.list_accounts(message.from_user.id)
         if not accounts:
             self.bot.send_message(message.chat.id, "⚠️ No active connected accounts.")
             return
@@ -473,39 +458,22 @@ class BotHandlers:
         self._show_inbox(call.message.chat.id, call.from_user.id, account_id, page)
 
     def _show_inbox(self, chat_id: int, user_id: int, account_id: str, page: int) -> None:
-        credentials = self.state.get_credentials_by_account_id(user_id, account_id)
-        if not credentials:
-            self.bot.send_message(chat_id, "⚠️ Account not found or disconnected.")
+        result = self.service.fetch_inbox(user_id, account_id, page)
+        if not result.ok:
+            self.bot.send_message(chat_id, result.message)
             return
-
-        email_address, password, _last_check = credentials
-        query = self.state.get_search(user_id, account_id)
-        status_code, payload = self.api_client.post_json(
-            "/get_inbox_view",
-            {"email": email_address, "password": password, "page": page, "query": query},
-        )
-        if status_code == 401:
-            removed_email = self.state.remove_account(user_id, account_id)
-            if removed_email:
-                self.state.save_sessions()
-            self.bot.send_message(chat_id, f"🔒 Session expired for <code>{sanitize(email_address)}</code>.")
-            return
-
-        emails = payload if isinstance(payload, list) else []
-        token = self.state.store_snapshot(user_id, account_id, emails)
-        subjects = [str(item.get("subject", "(No Subject)")) for item in emails]
         markup = build_inbox_keyboard(
-            account_id=account_id,
-            page=page,
-            query=query,
-            subjects=subjects,
-            snapshot_token=token,
-            can_next_page=len(emails) >= 10,
+            account_id=result.account_id or account_id,
+            page=result.page,
+            query=result.query,
+            subjects=list(result.subjects),
+            snapshot_token=result.snapshot_token or "",
+            can_next_page=result.can_next_page,
         )
 
-        heading = f"📂 <b>Inbox</b>\n📧 <code>{sanitize(email_address)}</code>\n📄 Page {page}"
-        if query:
-            heading += f"\n🔎 Query: <code>{sanitize(query)}</code>"
+        heading = f"📂 <b>Inbox</b>\n📧 <code>{sanitize(result.email or '')}</code>\n📄 Page {result.page}"
+        if result.query:
+            heading += f"\n🔎 Query: <code>{sanitize(result.query)}</code>"
         self.bot.send_message(chat_id, heading, reply_markup=markup)
 
     def _search_callback(self, call: types.CallbackQuery) -> None:
@@ -514,9 +482,9 @@ class BotHandlers:
             self.bot.answer_callback_query(call.id)
             return
         account_id = parts[1]
-        current_query = self.state.get_search(call.from_user.id, account_id)
+        current_query = self.service.get_search(call.from_user.id, account_id)
         if current_query:
-            self.state.set_search(call.from_user.id, account_id, "")
+            self.service.set_search(call.from_user.id, account_id, "")
             self.bot.answer_callback_query(call.id, "Search cleared")
             self._show_inbox(call.message.chat.id, call.from_user.id, account_id, 1)
             return
@@ -538,11 +506,7 @@ class BotHandlers:
     def _process_search(self, message: types.Message, expected_uid: int, account_id: str) -> None:
         if not self._same_user_or_ignore(message, expected_uid):
             return
-        query = message.text.strip()
-        if not query or query.lower() == "clear":
-            self.state.set_search(message.from_user.id, account_id, "")
-        else:
-            self.state.set_search(message.from_user.id, account_id, query)
+        self.service.set_search(message.from_user.id, account_id, message.text)
         self._show_inbox(message.chat.id, message.from_user.id, account_id, 1)
 
     def _read_callback(self, call: types.CallbackQuery) -> None:
@@ -556,37 +520,30 @@ class BotHandlers:
         except ValueError:
             self.bot.answer_callback_query(call.id, "Invalid selection", show_alert=True)
             return
-        mail = self.state.get_snapshot_mail(call.from_user.id, token, index)
-        if not mail:
+        detail = self.service.read_mail_detail(call.from_user.id, token, index)
+        if not detail:
             self.bot.answer_callback_query(call.id, "This list expired. Please refresh.", show_alert=True)
             return
         self.bot.answer_callback_query(call.id)
 
-        web_link = f"{self.config.worker_url}/view_email?id={mail.get('id', '')}"
-        subject = safe_shorten(mail.get("subject", "(No Subject)"), 80)
-        sender = safe_shorten(mail.get("sender", "Unknown"), 80)
-        received = sanitize(format_time(mail.get("received_at")))
-        body_preview = parse_email_preview(mail.get("body", ""))
-        otp = extract_otp(body_preview) or extract_otp(mail.get("subject", ""))
-
         text = (
             f"📨 <b>Email Details</b>\n"
-            f"👤 From: {sender}\n"
-            f"📌 Subject: {subject}\n"
-            f"📅 Time: {received or 'Unknown'}\n"
+            f"👤 From: {detail.from_sender}\n"
+            f"📌 Subject: {detail.subject}\n"
+            f"📅 Time: {detail.received}\n"
             f"➖➖➖➖➖➖➖\n"
             f"Tap below to open the full email."
         )
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🌍 View Full Email", url=web_link))
+        markup.add(types.InlineKeyboardButton("🌍 View Full Email", url=detail.view_link))
         markup.add(types.InlineKeyboardButton("❌ Close", callback_data="close"))
         self.bot.send_message(call.message.chat.id, text, reply_markup=markup)
-        if otp:
-            self.bot.send_message(call.message.chat.id, f"🔐 OTP: <code>{sanitize(otp)}</code>")
+        if detail.otp:
+            self.bot.send_message(call.message.chat.id, f"🔐 OTP: <code>{sanitize(detail.otp)}</code>")
 
     # ---------- logout ----------
     def _logout_specific(self, message: types.Message) -> None:
-        accounts = self.state.get_accounts(message.from_user.id)
+        accounts = self.service.list_accounts(message.from_user.id)
         if not accounts:
             self.bot.send_message(message.chat.id, "⚠️ No accounts to disconnect.")
             return
@@ -602,12 +559,11 @@ class BotHandlers:
             self.bot.answer_callback_query(call.id)
             return
         account_id = parts[1]
-        removed_email = self.state.remove_account(call.from_user.id, account_id)
+        removed_email = self.service.disconnect_account(call.from_user.id, account_id)
         if not removed_email:
             self.bot.answer_callback_query(call.id, "Account already removed.", show_alert=True)
             return
         self.bot.answer_callback_query(call.id)
-        self.state.save_sessions()
         self.bot.edit_message_text(
             f"✅ Disconnected <code>{sanitize(removed_email)}</code>",
             call.message.chat.id,

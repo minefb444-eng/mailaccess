@@ -1,4 +1,4 @@
 from .app import MailAccessBotApp
-from .config import BotConfig, load_config
+from .config import BotConfig, WebConfig, load_config, load_web_config
 
-__all__ = ["MailAccessBotApp", "BotConfig", "load_config"]
+__all__ = ["MailAccessBotApp", "BotConfig", "WebConfig", "load_config", "load_web_config"]
