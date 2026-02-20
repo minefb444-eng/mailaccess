@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="card">
+  <h3>Connected Accounts</h3>
+  <p><a href="/login">+ Add another account</a></p>
+  {% if not accounts %}
+    <p class="muted">No connected accounts yet.</p>
+  {% else %}
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account_id, email in accounts %}
+        <tr>
+          <td><code>{{ email }}</code></td>
+          <td>
+            <a href="/accounts/{{ account_id }}/inbox?page=1">Open Inbox</a>
+            <form method="post" action="/accounts/{{ account_id }}/logout" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <button type="submit">Disconnect</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <form method="post" action="/logout-all">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Logout All & End Web Session</button>
+  </form>
+</div>
+{% endblock %}

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import logging
-import sys
 
-from bot_app import MailAccessBotApp, load_config
+import uvicorn
+
+from bot_app import load_web_config
+from web_app import create_app
 
 
 def configure_logging() -> None:
@@ -17,23 +19,15 @@ def configure_logging() -> None:
 def main() -> int:
     configure_logging()
     try:
-        config = load_config()
+        config = load_web_config()
     except Exception as exc:
-        logging.error("Configuration error: %s", exc)
+        logging.error("Web configuration error: %s", exc)
         return 1
 
-    app = MailAccessBotApp(config)
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        logging.info("Bot stopped by operator.")
-        return 0
-    except Exception as exc:
-        logging.exception("Bot crashed: %s", exc)
-        return 1
+    app = create_app(config)
+    uvicorn.run(app, host=config.web_host, port=config.web_port)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

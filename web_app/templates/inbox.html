@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="card">
+  <p><a href="/accounts">← Back to accounts</a></p>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% else %}
+    <h3>Inbox for <code>{{ email }}</code></h3>
+    <form method="post" action="/accounts/{{ account_id }}/search">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="text" name="query" value="{{ query }}" placeholder="Search term (or clear)" />
+      <button type="submit">Apply Search</button>
+    </form>
+    <p class="muted">Page {{ page }}</p>
+    {% if not subjects %}
+      <p class="muted">Inbox is empty.</p>
+    {% else %}
+      <ul>
+        {% for index, subject in subjects %}
+        <li><a href="/mail/{{ snapshot_token }}/{{ index }}">{{ subject }}</a></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <p>
+      {% if has_prev %}
+      <a href="/accounts/{{ account_id }}/inbox?page={{ page - 1 }}">Prev</a>
+      {% endif %}
+      {% if has_next %}
+      <a href="/accounts/{{ account_id }}/inbox?page={{ page + 1 }}" style="margin-left:10px;">Next</a>
+      {% endif %}
+      <a href="/accounts/{{ account_id }}/inbox?page=1" style="margin-left:10px;">Refresh</a>
+    </p>
+  {% endif %}
+</div>
+{% endblock %}
