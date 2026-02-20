@@ -1,1 +1,39 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import logging
+import sys
+
+from bot_app import MailAccessBotApp, load_config
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+
+
+def main() -> int:
+    configure_logging()
+    try:
+        config = load_config()
+    except Exception as exc:
+        logging.error("Configuration error: %s", exc)
+        return 1
+
+    app = MailAccessBotApp(config)
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        logging.info("Bot stopped by operator.")
+        return 0
+    except Exception as exc:
+        logging.exception("Bot crashed: %s", exc)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
